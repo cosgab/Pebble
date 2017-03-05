@@ -92,6 +92,7 @@ static void bluetooth_callback(bool connected) {
     s_background_color = settings.backgroundColor;
 //    s_text_color = GColorBlue;
   }
+  window_set_background_color(s_main_window, s_background_color);
 
   // Redraw
   if (s_canvas_layer) {
@@ -280,7 +281,9 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, settings.batteryColor);
   graphics_context_set_stroke_width(ctx, 5);  
 //  graphics_draw_circle(ctx, s_center, s_radius / 100. * s_battery_level);
-  GRect battRect = grect_crop(bounds, 10);
+
+//  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
+  GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
   graphics_draw_arc( ctx, battRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360 / 100. * s_battery_level));
 
 }
@@ -406,6 +409,7 @@ static void prv_window_load(Window *window) {
       APP_LOG(APP_LOG_LEVEL_ERROR, "Health available!");
   #endif
 
+
 }
 
 static void prv_window_unload(Window *window) {
@@ -463,6 +467,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     settings.batteryColor = GColorFromHEX(battery_color_t->value->int32);
   }
   prv_save_settings();
+  s_background_color = settings.backgroundColor;
   update_time();
 }
 
@@ -487,6 +492,13 @@ static void prv_init() {
   s_background_color = settings.backgroundColor;
   
   window_stack_push(s_main_window, true);
+
+  battery_state_service_subscribe(battery_callback);
+
+  connection_service_subscribe((ConnectionHandlers) {
+    .pebble_app_connection_handler = bluetooth_callback
+  });
+
 }
 
 static void prv_deinit() {
