@@ -17,7 +17,12 @@
             "backgroundColor",
             "backgroundBTColor",
             "textColor",
-            "batteryColor"
+            "batteryColor",
+            "hourColor",
+            "quadrantColor",
+            "innerFillColor",
+            "hourhandColor",
+            "minhandColor"
         ],
         "projectType": "native",
         "resources": {

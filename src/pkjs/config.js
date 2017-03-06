@@ -37,7 +37,38 @@ module.exports = [
         "messageKey": "batteryColor",
         "defaultValue": "0xFFFFFF",
         "label": "Battery Color"
+      },
+      {
+        "type": "color",
+        "messageKey": "hourColor",
+        "defaultValue": "0xFFFFFF",
+        "label": "Hours Color"
+      },
+      {
+        "type": "color",
+        "messageKey": "quadrantColor",
+        "defaultValue": "0xFFFFFF",
+        "label": "Quadrant Color"
+      },
+      {
+        "type": "color",
+        "messageKey": "innerFillColor",
+        "defaultValue": "0xFFFFFF",
+        "label": "Inner filler Color"
+      },
+      {
+        "type": "color",
+        "messageKey": "hourhandColor",
+        "defaultValue": "0xFFFFFF",
+        "label": "Hour hands Color"
+      },
+      {
+        "type": "color",
+        "messageKey": "minhandColor",
+        "defaultValue": "0xFFFFFF",
+        "label": "Min hand Color"
       }
+
     ]
   },
   {

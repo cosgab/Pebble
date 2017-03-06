@@ -15,6 +15,11 @@ typedef struct ClaySettings {
   GColor backgroundBTColor;
   GColor textColor;
   GColor batteryColor;
+  GColor hourColor;
+  GColor quadrantColor;
+  GColor innerFillColor;
+  GColor hourhandColor;
+  GColor minhandColor;
 } ClaySettings;
 
 // An instance of the struct
@@ -66,7 +71,7 @@ static void update_time() {
   strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
   text_layer_set_text(s_date_layer, date_buffer);
   
-  text_layer_set_text_color(s_time_layer, settings.textColor);
+  text_layer_set_text_color(s_time_layer, settings.hourColor);
   text_layer_set_text_color(s_date_layer, settings.textColor);
   text_layer_set_text_color(s_steps_layer, settings.textColor);
 }
@@ -234,13 +239,13 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   }
   graphics_fill_rect(ctx, full_bounds, 0, GCornerNone);
 
-  graphics_context_set_stroke_color(ctx, GColorBlack);
+  graphics_context_set_stroke_color(ctx, settings.quadrantColor);
   graphics_context_set_stroke_width(ctx, 4);
 
   graphics_context_set_antialiased(ctx, ANTIALIASING);
 
   // White clockface
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, settings.innerFillColor);
   graphics_fill_circle(ctx, s_center, s_radius);
 
   // Draw outline
@@ -270,10 +275,14 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
     .y = (int16_t)(-cos_lookup(hour_angle) * (int32_t)(s_radius - (2 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.y,
   };
 
+  graphics_context_set_stroke_color(ctx, settings.hourhandColor);
+
   // Draw hands with positive length only
   if (s_radius > 2 * HAND_MARGIN) {
     graphics_draw_line(ctx, s_center, hour_hand);
   }
+
+  graphics_context_set_stroke_color(ctx, settings.minhandColor);
   if (s_radius > HAND_MARGIN) {
     graphics_draw_line(ctx, s_center, minute_hand);
   }
@@ -465,6 +474,26 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *battery_color_t = dict_find(iter, MESSAGE_KEY_batteryColor);
   if(battery_color_t) {
     settings.batteryColor = GColorFromHEX(battery_color_t->value->int32);
+  }
+  Tuple *hour_color_t = dict_find(iter, MESSAGE_KEY_hourColor);
+  if(hour_color_t) {
+    settings.hourColor = GColorFromHEX(hour_color_t->value->int32);
+  }
+  Tuple *quadrant_color_t = dict_find(iter, MESSAGE_KEY_quadrantColor);
+  if(quadrant_color_t) {
+    settings.quadrantColor = GColorFromHEX(quadrant_color_t->value->int32);
+  }
+  Tuple *innerFill_color_t = dict_find(iter, MESSAGE_KEY_innerFillColor);
+  if(innerFill_color_t) {
+    settings.innerFillColor = GColorFromHEX(innerFill_color_t->value->int32);
+  }
+  Tuple *hourhand_color_t = dict_find(iter, MESSAGE_KEY_hourhandColor);
+  if(hourhand_color_t) {
+    settings.hourhandColor = GColorFromHEX(hourhand_color_t->value->int32);
+  }
+  Tuple *minhand_color_t = dict_find(iter, MESSAGE_KEY_minhandColor);
+  if(minhand_color_t) {
+    settings.minhandColor = GColorFromHEX(minhand_color_t->value->int32);
   }
   prv_save_settings();
   s_background_color = settings.backgroundColor;
