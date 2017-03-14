@@ -1,3 +1,7 @@
+/*
+  ks-clock-face.c
+  sorgente per watchface rotondo 
+*/
 #include <pebble.h>
 
 #define COLORS PBL_IF_COLOR_ELSE(true, false)
