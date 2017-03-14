@@ -9,7 +9,8 @@
     "name": "gc-watch",
     "pebble": {
         "capabilities": [
-            "configurable"
+            "configurable",
+            "health"
         ],
         "displayName": "GC Round Watch ",
         "enableMultiJS": true,
@@ -38,13 +39,9 @@
         },
         "sdkVersion": "3",
         "targetPlatforms": [
-            "aplite",
-            "basalt",
-            "chalk",
-            "diorite",
-            "emery"
+            "basalt"
         ],
-        "uuid": "25becbb7-c0bc-4180-82b6-b36f1bf894c7",
+        "uuid": "c9b0d669-8fa8-4d6d-883f-6ef795fd2b42",
         "watchapp": {
             "watchface": true
         }

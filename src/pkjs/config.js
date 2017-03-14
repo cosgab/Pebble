@@ -5,74 +5,74 @@ module.exports = [
   },
   {
     "type": "text",
-    "defaultValue": "Specify the colors."
+    "defaultValue": "Scegli i colori."
   },
   {
     "type": "section",
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Colors"
+        "defaultValue": "Colori"
       },
       {
         "type": "color",
         "messageKey": "backgroundColor",
         "defaultValue": "0x000000",
-        "label": "Background Color BT ok"
+        "label": "Sfondo esterno BT ok"
       },
       {
         "type": "color",
         "messageKey": "backgroundBTColor",
         "defaultValue": "0xFFFFFF",
-        "label": "BT Error Background Color"
+        "label": "Sfondo esterno con errore BT"
       },
       {
         "type": "color",
         "messageKey": "textColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Text Color"
+        "label": "Colore testo passi e data"
       },
       {
         "type": "color",
         "messageKey": "batteryColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Battery Color"
+        "label": "Colore batteria"
       },
       {
         "type": "color",
         "messageKey": "hourColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Hours Color"
+        "label": "Colore testo ore"
       },
       {
         "type": "color",
         "messageKey": "quadrantColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Quadrant Color"
+        "label": "Colore quadrante"
       },
       {
         "type": "color",
         "messageKey": "innerFillColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Inner filler Color"
+        "label": "Colore sfondo interno"
       },
       {
         "type": "color",
         "messageKey": "hourhandColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Hour hands Color"
+        "label": "Colore lancetta ore"
       },
       {
         "type": "color",
         "messageKey": "minhandColor",
         "defaultValue": "0xFFFFFF",
-        "label": "Min hand Color"
+        "label": "Colore lancetta minuti"
       }
 
     ]
   },
   {
     "type": "submit",
-    "defaultValue": "Save Settings"
+    "defaultValue": "Salva"
   }
 ];
