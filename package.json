@@ -23,7 +23,11 @@
             "quadrantColor",
             "innerFillColor",
             "hourhandColor",
-            "minhandColor"
+            "minhandColor",
+            "KEY_TEMPERATURE",
+            "KEY_CONDITIONS",
+            "KEY_SUNRISE",
+            "KEY_SUNSET"
         ],
         "projectType": "native",
         "resources": {

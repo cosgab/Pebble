@@ -1,6 +1,12 @@
 /*
   ks-clock-face.c
-  sorgente per watchface rotondo 
+  sorgente per watchface rotondo
+  
+  Deve essere integrato l'accesso a OpenWeather per ottenere le effemeridi del giorno
+  a supporto del disegno della durata della giornata e dell'avanzamento del sole
+  20170305 aggiunto js per la gestione della chiamata a openWeather, calcolo della durata
+    e visualizzazione condizioni e durata
+  
 */
 #include <pebble.h>
 
@@ -43,10 +49,11 @@ static uint8_t s_radius = 0, s_anim_hours_60 = 0, s_color_channels[3];
 static uint8_t s_radius_final;
 static bool s_animating = false;
 
-static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer;
+static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer;
 static GFont s_time_font, s_date_font, s_steps_font;
 static int s_battery_level;
 static GColor s_background_color;
+static char duration_layer_buffer[32];
 
 // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
 static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 500 };
@@ -54,6 +61,75 @@ VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
+/************************************ Weather *********************************/
+
+  static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
+  // Store incoming information
+  static char temperature_buffer[8];
+  static char conditions_buffer[32];
+  static char sunrise_buffer[32];
+  static char sunset_buffer[32];
+  static char weather_layer_buffer[32];
+  static char sun_layer_buffer[32];
+  static int ore, minuti;
+  static float tmin;
+  
+
+  // Read tuples for data
+  Tuple *temp_tuple = dict_find(iterator, MESSAGE_KEY_KEY_TEMPERATURE);
+  Tuple *conditions_tuple = dict_find(iterator, MESSAGE_KEY_KEY_CONDITIONS);
+  Tuple *sunrise_tuple = dict_find(iterator, MESSAGE_KEY_KEY_SUNRISE);
+  Tuple *sunset_tuple = dict_find(iterator, MESSAGE_KEY_KEY_SUNSET);
+
+  // If all data is available, use it
+  if(temp_tuple && conditions_tuple) {
+    snprintf(temperature_buffer, sizeof(temperature_buffer), "%dC", (int)temp_tuple->value->int32);
+    snprintf(conditions_buffer, sizeof(conditions_buffer), "%d", (int)conditions_tuple->value->cstring);
+
+    // used to translate the result to TIME
+    time_t temp = (uint)sunrise_tuple->value->uint32;
+    struct tm *tick_time = localtime( &temp );
+    strftime(sunrise_buffer, sizeof("00:00"), "%H:%M", tick_time);
+
+    temp = (uint)sunset_tuple->value->uint32;
+    tick_time = localtime( &temp );
+    strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+
+//    snprintf(conditions_buffer, sizeof(conditions_buffer), "%s", conditions_tuple->value->cstring);
+
+    // Assemble full string and display
+    snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", sunrise_buffer, sunset_buffer);
+    // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
+    // text_layer_set_text(s_weather_layer, weather_layer_buffer);
+
+    temp = (uint)sunset_tuple->value->uint32 - (uint)sunrise_tuple->value->uint32;
+    ore = temp / 3600;
+    tmin = temp / 3600.;
+    minuti = (tmin - ore) * 60.; 
+    
+    APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %d", (uint)temp, ore, minuti);
+    
+    tick_time = localtime( &temp );
+
+    strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+
+    snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s Dur.: %d:%d", conditions_tuple->value->cstring, ore, minuti);
+    // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
+    // text_layer_set_text(s_sun_layer, sun_layer_buffer);
+  }
+}
+
+static void inbox_dropped_callback(AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
+}
+
+static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed!");
+}
+
+static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
+}
 
 
 /************************************ UI **************************************/
@@ -75,9 +151,12 @@ static void update_time() {
   strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
   text_layer_set_text(s_date_layer, date_buffer);
   
+  text_layer_set_text(s_duration_layer, duration_layer_buffer);
+  
   text_layer_set_text_color(s_time_layer, settings.hourColor);
   text_layer_set_text_color(s_date_layer, settings.textColor);
   text_layer_set_text_color(s_steps_layer, settings.textColor);
+  text_layer_set_text_color(s_duration_layer, settings.hourColor);
 }
 
 /* ********************************* Services **********************************/
@@ -362,6 +441,15 @@ static void prv_create_canvas() {
   text_layer_set_font(s_date_layer, s_date_font);
   layer_add_child(window_layer, text_layer_get_layer(s_date_layer));
 
+  // Create duration TextLayer
+  s_duration_layer = text_layer_create(GRect(0, 100, 144, 30));
+  text_layer_set_text_color(s_duration_layer, settings.textColor);
+  text_layer_set_background_color(s_duration_layer, GColorClear);
+  text_layer_set_text_alignment(s_duration_layer, GTextAlignmentCenter);
+  text_layer_set_text(s_date_layer, "duration");
+  text_layer_set_font(s_date_layer, s_date_font);
+  layer_add_child(window_layer, text_layer_get_layer(s_duration_layer));
+
   s_steps_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   // Create steps TextLayer
   s_steps_layer = text_layer_create(GRect(10, -5, 144-20, 30));
@@ -532,6 +620,17 @@ static void prv_init() {
     .pebble_app_connection_handler = bluetooth_callback
   });
 
+
+
+  // Register callbacks
+  app_message_register_inbox_received(inbox_received_callback);
+  app_message_register_inbox_dropped(inbox_dropped_callback);
+  app_message_register_outbox_failed(outbox_failed_callback);
+  app_message_register_outbox_sent(outbox_sent_callback);
+
+  // Open AppMessage
+  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  
 }
 
 static void prv_deinit() {
