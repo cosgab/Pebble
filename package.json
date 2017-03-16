@@ -12,7 +12,7 @@
             "configurable",
             "health"
         ],
-        "displayName": "GC Round Watch ",
+        "displayName": "GC Round Sun Watch ",
         "enableMultiJS": true,
         "messageKeys": [
             "backgroundColor",
@@ -24,10 +24,11 @@
             "innerFillColor",
             "hourhandColor",
             "minhandColor",
-            "KEY_TEMPERATURE",
-            "KEY_CONDITIONS",
-            "KEY_SUNRISE",
-            "KEY_SUNSET"
+            "temperature",
+            "conditions",
+            "sunrise",
+            "sunset",
+            "type"
         ],
         "projectType": "native",
         "resources": {
@@ -50,5 +51,5 @@
             "watchface": true
         }
     },
-    "version": "1.0.0"
+    "version": "1.2.0"
 }

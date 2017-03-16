@@ -54,6 +54,9 @@ static GFont s_time_font, s_date_font, s_steps_font;
 static int s_battery_level;
 static GColor s_background_color;
 static char duration_layer_buffer[32];
+// dirata per il disegno del quadrante
+static double durataGiorno;
+
 
 // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
 static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 500 };
@@ -61,77 +64,6 @@ VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
-/************************************ Weather *********************************/
-
-  static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
-  // Store incoming information
-  static char temperature_buffer[8];
-  static char conditions_buffer[32];
-  static char sunrise_buffer[32];
-  static char sunset_buffer[32];
-  static char weather_layer_buffer[32];
-  static char sun_layer_buffer[32];
-  static int ore, minuti;
-  static float tmin;
-  
-
-  // Read tuples for data
-  Tuple *temp_tuple = dict_find(iterator, MESSAGE_KEY_KEY_TEMPERATURE);
-  Tuple *conditions_tuple = dict_find(iterator, MESSAGE_KEY_KEY_CONDITIONS);
-  Tuple *sunrise_tuple = dict_find(iterator, MESSAGE_KEY_KEY_SUNRISE);
-  Tuple *sunset_tuple = dict_find(iterator, MESSAGE_KEY_KEY_SUNSET);
-
-  // If all data is available, use it
-  if(temp_tuple && conditions_tuple) {
-    snprintf(temperature_buffer, sizeof(temperature_buffer), "%dC", (int)temp_tuple->value->int32);
-    snprintf(conditions_buffer, sizeof(conditions_buffer), "%d", (int)conditions_tuple->value->cstring);
-
-    // used to translate the result to TIME
-    time_t temp = (uint)sunrise_tuple->value->uint32;
-    struct tm *tick_time = localtime( &temp );
-    strftime(sunrise_buffer, sizeof("00:00"), "%H:%M", tick_time);
-
-    temp = (uint)sunset_tuple->value->uint32;
-    tick_time = localtime( &temp );
-    strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
-
-//    snprintf(conditions_buffer, sizeof(conditions_buffer), "%s", conditions_tuple->value->cstring);
-
-    // Assemble full string and display
-    snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", sunrise_buffer, sunset_buffer);
-    // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
-    // text_layer_set_text(s_weather_layer, weather_layer_buffer);
-
-    temp = (uint)sunset_tuple->value->uint32 - (uint)sunrise_tuple->value->uint32;
-    ore = temp / 3600;
-    tmin = temp / 3600.;
-    minuti = (tmin - ore) * 60.; 
-    
-    APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %d", (uint)temp, ore, minuti);
-    
-    tick_time = localtime( &temp );
-
-    strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
-
-    snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s Dur.: %d:%d", conditions_tuple->value->cstring, ore, minuti);
-    // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
-    // text_layer_set_text(s_sun_layer, sun_layer_buffer);
-  }
-}
-
-static void inbox_dropped_callback(AppMessageResult reason, void *context) {
-  APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
-}
-
-static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
-  APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed!");
-}
-
-static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
-}
-
-
 /************************************ UI **************************************/
 static void update_time() {
   time_t temp = time(NULL); 
@@ -158,6 +90,146 @@ static void update_time() {
   text_layer_set_text_color(s_steps_layer, settings.textColor);
   text_layer_set_text_color(s_duration_layer, settings.hourColor);
 }
+
+/************************************ configuration ***************************/
+static void prv_save_settings() {
+  persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
+  // Update the display based on new settings
+  // prv_update_display();
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+}
+
+/* Configuration received
+*/
+static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) {
+  // Read color preferences
+  Tuple *bg_color_t = dict_find(iter, MESSAGE_KEY_backgroundColor);
+  if(bg_color_t) {
+    settings.backgroundColor = GColorFromHEX(bg_color_t->value->int32);
+  }
+
+  Tuple *bt_color_t = dict_find(iter, MESSAGE_KEY_backgroundBTColor);
+  if(bt_color_t) {
+    settings.backgroundBTColor = GColorFromHEX(bt_color_t->value->int32);
+  }
+
+  // Read boolean preferences
+  Tuple *text_color_t = dict_find(iter, MESSAGE_KEY_textColor);
+  if(text_color_t) {
+    settings.textColor = GColorFromHEX(text_color_t->value->int32);
+  }
+
+  Tuple *battery_color_t = dict_find(iter, MESSAGE_KEY_batteryColor);
+  if(battery_color_t) {
+    settings.batteryColor = GColorFromHEX(battery_color_t->value->int32);
+  }
+  Tuple *hour_color_t = dict_find(iter, MESSAGE_KEY_hourColor);
+  if(hour_color_t) {
+    settings.hourColor = GColorFromHEX(hour_color_t->value->int32);
+  }
+  Tuple *quadrant_color_t = dict_find(iter, MESSAGE_KEY_quadrantColor);
+  if(quadrant_color_t) {
+    settings.quadrantColor = GColorFromHEX(quadrant_color_t->value->int32);
+  }
+  Tuple *innerFill_color_t = dict_find(iter, MESSAGE_KEY_innerFillColor);
+  if(innerFill_color_t) {
+    settings.innerFillColor = GColorFromHEX(innerFill_color_t->value->int32);
+  }
+  Tuple *hourhand_color_t = dict_find(iter, MESSAGE_KEY_hourhandColor);
+  if(hourhand_color_t) {
+    settings.hourhandColor = GColorFromHEX(hourhand_color_t->value->int32);
+  }
+  Tuple *minhand_color_t = dict_find(iter, MESSAGE_KEY_minhandColor);
+  if(minhand_color_t) {
+    settings.minhandColor = GColorFromHEX(minhand_color_t->value->int32);
+  }
+  prv_save_settings();
+  s_background_color = settings.backgroundColor;
+  update_time();
+}
+
+/************************************ Weather *********************************/
+
+  static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
+  // Store incoming information
+  static char temperature_buffer[8];
+  static char conditions_buffer[32];
+  static char sunrise_buffer[32];
+  static char sunset_buffer[32];
+  static char weather_layer_buffer[32];
+  static char sun_layer_buffer[32];
+  static int ore, minuti;
+  static float tmin;
+  
+
+  // Read tuples for data
+  Tuple *type_tuple = dict_find(iterator, MESSAGE_KEY_type);  
+  if( type_tuple){
+    Tuple *temp_tuple = dict_find(iterator, MESSAGE_KEY_temperature);
+    Tuple *conditions_tuple = dict_find(iterator, MESSAGE_KEY_conditions);
+    Tuple *sunrise_tuple = dict_find(iterator, MESSAGE_KEY_sunrise);
+    Tuple *sunset_tuple = dict_find(iterator, MESSAGE_KEY_sunset);
+  
+    // If all data is available, use it
+    if(temp_tuple && conditions_tuple) {
+      snprintf(temperature_buffer, sizeof(temperature_buffer), "%dC", (int)temp_tuple->value->int32);
+      snprintf(conditions_buffer, sizeof(conditions_buffer), "%d", (int)conditions_tuple->value->cstring);
+  
+      // used to translate the result to TIME
+      time_t temp = (uint)sunrise_tuple->value->uint32;
+      struct tm *tick_time = localtime( &temp );
+      strftime(sunrise_buffer, sizeof("00:00"), "%H:%M", tick_time);
+  
+      temp = (uint)sunset_tuple->value->uint32;
+      tick_time = localtime( &temp );
+      strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+  
+  //    snprintf(conditions_buffer, sizeof(conditions_buffer), "%s", conditions_tuple->value->cstring);
+  
+      // Assemble full string and display
+      snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", sunrise_buffer, sunset_buffer);
+      // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
+      // text_layer_set_text(s_weather_layer, weather_layer_buffer);
+  
+      temp = (uint)sunset_tuple->value->uint32 - (uint)sunrise_tuple->value->uint32;
+      ore = temp / 3600;
+      tmin = temp / 3600.;
+      minuti = (tmin - ore) * 60.;
+      
+      durataGiorno = temp/3600.;
+      
+      APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %d", (uint)temp, ore, minuti);
+      
+      tick_time = localtime( &temp );
+  
+      strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+  
+      snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s Dur.: %d:%d", conditions_tuple->value->cstring, ore, minuti);
+      // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
+      // text_layer_set_text(s_sun_layer, sun_layer_buffer);
+    }
+    update_time();
+  }else{
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Configurazione arrivata");
+     prv_inbox_received_handler(iterator, &context); 
+  }
+}
+
+static void inbox_dropped_callback(AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
+}
+
+static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed!");
+}
+
+static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
+}
+
+
 
 /* ********************************* Services **********************************/
 static void battery_callback(BatteryChargeState state) {
@@ -332,7 +404,7 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   graphics_fill_circle(ctx, s_center, s_radius);
 
   // Draw outline
-  graphics_draw_circle(ctx, s_center, s_radius);
+  // graphics_draw_circle(ctx, s_center, s_radius);
 
   // Don't use current time while animating
   Time mode_time = (s_animating) ? s_anim_time : s_last_time;
@@ -378,6 +450,12 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
   graphics_draw_arc( ctx, battRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360 / 100. * s_battery_level));
 
+  graphics_context_set_stroke_color(ctx, settings.quadrantColor);
+  graphics_context_set_stroke_width(ctx, 7);  
+//  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
+  GRect quadrantRect = GRect( s_center.x - s_radius+3, s_center.y - s_radius+3, s_radius * 2 -5 , s_radius * 2 -5 );
+  graphics_draw_arc( ctx, quadrantRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
+//  graphics_fill_radial( ctx, quadrantRect, GOvalScaleModeFitCircle, 5, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
 }
 
 static int prv_anim_percentage(AnimationProgress dist_normalized, int max) {
@@ -536,61 +614,6 @@ static void prv_load_settings() {
   persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
 }
 
-static void prv_save_settings() {
-  persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
-  // Update the display based on new settings
-  // prv_update_display();
-  if (s_canvas_layer) {
-    layer_mark_dirty(s_canvas_layer);
-  }
-}
-
-static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) {
-  // Read color preferences
-  Tuple *bg_color_t = dict_find(iter, MESSAGE_KEY_backgroundColor);
-  if(bg_color_t) {
-    settings.backgroundColor = GColorFromHEX(bg_color_t->value->int32);
-  }
-
-  Tuple *bt_color_t = dict_find(iter, MESSAGE_KEY_backgroundBTColor);
-  if(bt_color_t) {
-    settings.backgroundBTColor = GColorFromHEX(bt_color_t->value->int32);
-  }
-
-  // Read boolean preferences
-  Tuple *text_color_t = dict_find(iter, MESSAGE_KEY_textColor);
-  if(text_color_t) {
-    settings.textColor = GColorFromHEX(text_color_t->value->int32);
-  }
-
-  Tuple *battery_color_t = dict_find(iter, MESSAGE_KEY_batteryColor);
-  if(battery_color_t) {
-    settings.batteryColor = GColorFromHEX(battery_color_t->value->int32);
-  }
-  Tuple *hour_color_t = dict_find(iter, MESSAGE_KEY_hourColor);
-  if(hour_color_t) {
-    settings.hourColor = GColorFromHEX(hour_color_t->value->int32);
-  }
-  Tuple *quadrant_color_t = dict_find(iter, MESSAGE_KEY_quadrantColor);
-  if(quadrant_color_t) {
-    settings.quadrantColor = GColorFromHEX(quadrant_color_t->value->int32);
-  }
-  Tuple *innerFill_color_t = dict_find(iter, MESSAGE_KEY_innerFillColor);
-  if(innerFill_color_t) {
-    settings.innerFillColor = GColorFromHEX(innerFill_color_t->value->int32);
-  }
-  Tuple *hourhand_color_t = dict_find(iter, MESSAGE_KEY_hourhandColor);
-  if(hourhand_color_t) {
-    settings.hourhandColor = GColorFromHEX(hourhand_color_t->value->int32);
-  }
-  Tuple *minhand_color_t = dict_find(iter, MESSAGE_KEY_minhandColor);
-  if(minhand_color_t) {
-    settings.minhandColor = GColorFromHEX(minhand_color_t->value->int32);
-  }
-  prv_save_settings();
-  s_background_color = settings.backgroundColor;
-  update_time();
-}
 
 static void prv_init() {
   srand(time(NULL));

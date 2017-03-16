@@ -42,10 +42,11 @@ function locationSuccess(pos) {
       console.log("Sunset at " + sunset);
       // Assemble dictionary using our keys
       var dictionary = {
-        "KEY_TEMPERATURE": temperature,
-        "KEY_CONDITIONS": conditions,
-        "KEY_SUNRISE": sunrise,
-        "KEY_SUNSET": sunset
+        "type" : "sun",
+        "temperature": temperature,
+        "conditions": conditions,
+        "sunrise": sunrise,
+        "sunset": sunset
       };
 
       // Send to Pebble
