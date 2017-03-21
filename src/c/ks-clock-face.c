@@ -6,7 +6,9 @@
   a supporto del disegno della durata della giornata e dell'avanzamento del sole
   20170305 aggiunto js per la gestione della chiamata a openWeather, calcolo della durata
     e visualizzazione condizioni e durata
-  
+    
+  20170319 aggiunto il riempimento bicolore dell'interno del quadrante per identificare 
+    la durata della giornata
 */
 #include <pebble.h>
 
@@ -19,6 +21,9 @@
 // Persistent storage key
 #define SETTINGS_KEY 1
 
+#define TIME_ANGLE(time) time * (TRIG_MAX_ANGLE / 24)
+#define INSET PBL_IF_ROUND_ELSE(5, 3)
+
 // Define our settings struct
 typedef struct ClaySettings {
   GColor backgroundColor;
@@ -30,6 +35,7 @@ typedef struct ClaySettings {
   GColor innerFillColor;
   GColor hourhandColor;
   GColor minhandColor;
+  GColor handColor24;
 } ClaySettings;
 
 // An instance of the struct
@@ -56,7 +62,7 @@ static GColor s_background_color;
 static char duration_layer_buffer[32];
 // dirata per il disegno del quadrante
 static double durataGiorno;
-
+static double oraAlba, oraTramonto;
 
 // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
 static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 500 };
@@ -69,28 +75,29 @@ static void update_time() {
   time_t temp = time(NULL); 
   struct tm *tick_time = localtime(&temp);
 
-  // Create a long-lived buffer, and show the time
-  static char buffer[] = "00:00";
-  if(clock_is_24h_style()) {
-    strftime(buffer, sizeof("00:00"), "%H:%M", tick_time);
-  } else {
-    strftime(buffer, sizeof("00:00"), "%I:%M", tick_time);
+  if (!s_animating) {
+      // Create a long-lived buffer, and show the time
+    static char buffer[] = "00:00";
+    if(clock_is_24h_style()) {
+      strftime(buffer, sizeof("00:00"), "%H:%M", tick_time);
+    } else {
+      strftime(buffer, sizeof("00:00"), "%I:%M", tick_time);
+    }
+    text_layer_set_text(s_time_layer, buffer);
+    
+    // Show the date
+    static char date_buffer[16];
+    strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
+    text_layer_set_text(s_date_layer, date_buffer);
+    
+    text_layer_set_text(s_duration_layer, duration_layer_buffer);
+    
+    text_layer_set_text_color(s_time_layer, settings.hourColor);
+    text_layer_set_text_color(s_date_layer, settings.textColor);
+    text_layer_set_text_color(s_steps_layer, settings.textColor);
+    text_layer_set_text_color(s_duration_layer, settings.hourColor);
   }
-  text_layer_set_text(s_time_layer, buffer);
-  
-  // Show the date
-  static char date_buffer[16];
-  strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
-  text_layer_set_text(s_date_layer, date_buffer);
-  
-  text_layer_set_text(s_duration_layer, duration_layer_buffer);
-  
-  text_layer_set_text_color(s_time_layer, settings.hourColor);
-  text_layer_set_text_color(s_date_layer, settings.textColor);
-  text_layer_set_text_color(s_steps_layer, settings.textColor);
-  text_layer_set_text_color(s_duration_layer, settings.hourColor);
 }
-
 /************************************ configuration ***************************/
 static void prv_save_settings() {
   persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
@@ -145,6 +152,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if(minhand_color_t) {
     settings.minhandColor = GColorFromHEX(minhand_color_t->value->int32);
   }
+  Tuple *handColor24_color_t = dict_find(iter, MESSAGE_KEY_handColor24);
+  if(handColor24_color_t) {
+    settings.handColor24 = GColorFromHEX(handColor24_color_t->value->int32);
+  }
   prv_save_settings();
   s_background_color = settings.backgroundColor;
   update_time();
@@ -174,17 +185,23 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   
     // If all data is available, use it
     if(temp_tuple && conditions_tuple) {
-      snprintf(temperature_buffer, sizeof(temperature_buffer), "%dC", (int)temp_tuple->value->int32);
+      snprintf(temperature_buffer, sizeof(temperature_buffer), "%d°C", (int)temp_tuple->value->int32);
       snprintf(conditions_buffer, sizeof(conditions_buffer), "%d", (int)conditions_tuple->value->cstring);
   
       // used to translate the result to TIME
       time_t temp = (uint)sunrise_tuple->value->uint32;
       struct tm *tick_time = localtime( &temp );
       strftime(sunrise_buffer, sizeof("00:00"), "%H:%M", tick_time);
-  
+      
+      oraAlba = tick_time->tm_hour + tick_time->tm_min / 60.;
+      APP_LOG(APP_LOG_LEVEL_INFO, "oraAlba: %d %d:%d", (int)oraAlba, tick_time->tm_hour, tick_time->tm_min );      
+      
       temp = (uint)sunset_tuple->value->uint32;
       tick_time = localtime( &temp );
       strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+
+      oraTramonto = tick_time->tm_hour + tick_time->tm_min / 60.;
+      APP_LOG(APP_LOG_LEVEL_INFO, "oraTramonto: %d %d:%d", (int)oraTramonto, tick_time->tm_hour, tick_time->tm_min );      
   
   //    snprintf(conditions_buffer, sizeof(conditions_buffer), "%s", conditions_tuple->value->cstring);
   
@@ -200,13 +217,13 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       
       durataGiorno = temp/3600.;
       
-      APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %d", (uint)temp, ore, minuti);
+      APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %02d", (uint)temp, ore, minuti);
       
       tick_time = localtime( &temp );
   
       strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
   
-      snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s Dur.: %d:%d", conditions_tuple->value->cstring, ore, minuti);
+      snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s %s", conditions_tuple->value->cstring, temperature_buffer);
       // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
       // text_layer_set_text(s_sun_layer, sun_layer_buffer);
     }
@@ -394,14 +411,34 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   }
   graphics_fill_rect(ctx, full_bounds, 0, GCornerNone);
 
-  graphics_context_set_stroke_color(ctx, settings.quadrantColor);
-  graphics_context_set_stroke_width(ctx, 4);
-
   graphics_context_set_antialiased(ctx, ANTIALIASING);
 
+  /*
+    riempie il quadrante con i due segmenti relativi alla durata del giorno
+  */
+  if (!s_animating) {
+    graphics_context_set_stroke_color(ctx, settings.quadrantColor);
+    graphics_context_set_stroke_width(ctx, 4);
+    
+  // Battery clockface  
+    graphics_context_set_stroke_color(ctx, settings.batteryColor);
+    graphics_context_set_stroke_width(ctx, 5);  
+  //  graphics_draw_circle(ctx, s_center, s_radius / 100. * s_battery_level);
+  
+  //  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
+    GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
+    graphics_draw_arc( ctx, battRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360 / 100. * s_battery_level));
+      // Minutes are expanding circle arc
+    GRect frame = grect_inset(bounds, GEdgeInsets(4 * INSET));
+    graphics_context_set_fill_color(ctx, settings.innerFillColor);
+    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, 55, DEG_TO_TRIGANGLE((oraAlba - 12) * 15.), DEG_TO_TRIGANGLE((oraTramonto - 12) * 15.) );
+  
+    graphics_context_set_fill_color(ctx, settings.quadrantColor);
+    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, 55, DEG_TO_TRIGANGLE((oraTramonto - 12) * 15.), DEG_TO_TRIGANGLE((oraAlba + 12) * 15.));
+  }
   // White clockface
-  graphics_context_set_fill_color(ctx, settings.innerFillColor);
-  graphics_fill_circle(ctx, s_center, s_radius);
+  //graphics_context_set_fill_color(ctx, settings.innerFillColor);
+  //graphics_fill_circle(ctx, s_center, s_radius);
 
   // Draw outline
   // graphics_draw_circle(ctx, s_center, s_radius);
@@ -441,21 +478,42 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
   if (s_radius > HAND_MARGIN) {
     graphics_draw_line(ctx, s_center, minute_hand);
   }
-  // Battery clockface  
-  graphics_context_set_stroke_color(ctx, settings.batteryColor);
-  graphics_context_set_stroke_width(ctx, 5);  
-//  graphics_draw_circle(ctx, s_center, s_radius / 100. * s_battery_level);
 
-//  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
-  GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
-  graphics_draw_arc( ctx, battRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360 / 100. * s_battery_level));
+  /*
+    mostra sulle 24 ore
+  */
+  time_t t = time(NULL);
+  struct tm *time_now = localtime(&t);
+  float angoloOra = TRIG_MAX_ANGLE * (time_now->tm_hour + time_now->tm_min / 60.) / 24. - ( TRIG_MAX_ANGLE / 2. );
+  
+  
+//  APP_LOG(APP_LOG_LEVEL_INFO, 
+//              "Angolo %d %d", angoloOra, time_now->tm_hour);  
+  // hour_angle += (minute_angle / TRIG_MAX_ANGLE) * (TRIG_MAX_ANGLE / 24);
+  hour_hand = (GPoint) {
+    .x = (int16_t)(sin_lookup(angoloOra) * (int32_t)(s_radius - (1.5 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.x,
+    .y = (int16_t)(-cos_lookup(angoloOra) * (int32_t)(s_radius - (1.5 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.y,
+  };
+  
+  if( hour_angle > TRIG_MAX_ANGLE / 4 && hour_angle < TRIG_MAX_ANGLE / 0.75){
+    graphics_context_set_stroke_color(ctx, settings.handColor24); 
+  }else{
+    graphics_context_set_stroke_color(ctx, settings.handColor24);
+  }
+  
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_line(ctx, s_center, hour_hand);
+  
+  
 
   graphics_context_set_stroke_color(ctx, settings.quadrantColor);
   graphics_context_set_stroke_width(ctx, 7);  
 //  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
-  GRect quadrantRect = GRect( s_center.x - s_radius+3, s_center.y - s_radius+3, s_radius * 2 -5 , s_radius * 2 -5 );
-  graphics_draw_arc( ctx, quadrantRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
-//  graphics_fill_radial( ctx, quadrantRect, GOvalScaleModeFitCircle, 5, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
+//  GRect quadrantRect = GRect( s_center.x - s_radius+3, s_center.y - s_radius+3, s_radius * 2 -5 , s_radius * 2 -5 );
+//  graphics_draw_arc( ctx, quadrantRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
+//  graphics_fill_radial( ctx, quadrantRect, GOvalScaleModeFitCircle, 25, DEG_TO_TRIGANGLE(90), TIME_ANGLE(durataGiorno) );
+  
+
 }
 
 static int prv_anim_percentage(AnimationProgress dist_normalized, int max) {
@@ -501,7 +559,7 @@ static void prv_create_canvas() {
   /* test dell'ora */
   s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
   // Create time TextLayer
-  s_time_layer = text_layer_create(GRect(0, 42, 144, 50));
+  s_time_layer = text_layer_create(GRect(0, 32, 144, 50));
   text_layer_set_background_color(s_time_layer, GColorClear);
   text_layer_set_text_color(s_time_layer, settings.textColor);
   text_layer_set_text(s_time_layer, "00:00");
@@ -520,7 +578,7 @@ static void prv_create_canvas() {
   layer_add_child(window_layer, text_layer_get_layer(s_date_layer));
 
   // Create duration TextLayer
-  s_duration_layer = text_layer_create(GRect(0, 100, 144, 30));
+  s_duration_layer = text_layer_create(GRect(0, 115, 144, 30));
   text_layer_set_text_color(s_duration_layer, settings.textColor);
   text_layer_set_background_color(s_duration_layer, GColorClear);
   text_layer_set_text_alignment(s_duration_layer, GTextAlignmentCenter);

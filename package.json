@@ -28,7 +28,8 @@
             "conditions",
             "sunrise",
             "sunset",
-            "type"
+            "type",
+            "handColor24"
         ],
         "projectType": "native",
         "resources": {
