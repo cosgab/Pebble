@@ -9,6 +9,7 @@
     "name": "gc-watch",
     "pebble": {
         "capabilities": [
+            "location",
             "configurable",
             "health"
         ],
@@ -29,7 +30,9 @@
             "sunrise",
             "sunset",
             "type",
-            "handColor24"
+            "latitude",
+            "handColor24",
+            "place"
         ],
         "projectType": "native",
         "resources": {

@@ -9,6 +9,7 @@
     
   20170319 aggiunto il riempimento bicolore dell'interno del quadrante per identificare 
     la durata della giornata
+  20170325 aggiunto identificativo località
 */
 #include <pebble.h>
 
@@ -55,10 +56,11 @@ static uint8_t s_radius = 0, s_anim_hours_60 = 0, s_color_channels[3];
 static uint8_t s_radius_final;
 static bool s_animating = false;
 
-static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer;
+static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer, *s_place_layer;
 static GFont s_time_font, s_date_font, s_steps_font;
 static int s_battery_level;
 static GColor s_background_color;
+static char place_layer_buffer[32];
 static char duration_layer_buffer[32];
 // dirata per il disegno del quadrante
 static double durataGiorno;
@@ -90,11 +92,13 @@ static void update_time() {
     strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
     text_layer_set_text(s_date_layer, date_buffer);
     
+    text_layer_set_text(s_place_layer, place_layer_buffer);
     text_layer_set_text(s_duration_layer, duration_layer_buffer);
     
     text_layer_set_text_color(s_time_layer, settings.hourColor);
     text_layer_set_text_color(s_date_layer, settings.textColor);
     text_layer_set_text_color(s_steps_layer, settings.textColor);
+    text_layer_set_text_color(s_place_layer, settings.hourColor);
     text_layer_set_text_color(s_duration_layer, settings.hourColor);
   }
 }
@@ -182,6 +186,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     Tuple *conditions_tuple = dict_find(iterator, MESSAGE_KEY_conditions);
     Tuple *sunrise_tuple = dict_find(iterator, MESSAGE_KEY_sunrise);
     Tuple *sunset_tuple = dict_find(iterator, MESSAGE_KEY_sunset);
+    Tuple *place_tuple = dict_find(iterator, MESSAGE_KEY_place);
   
     // If all data is available, use it
     if(temp_tuple && conditions_tuple) {
@@ -223,6 +228,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   
       strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
   
+      snprintf(place_layer_buffer, sizeof(place_layer_buffer), "%s", place_tuple->value->cstring);
       snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s %s", conditions_tuple->value->cstring, temperature_buffer);
       // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
       // text_layer_set_text(s_sun_layer, sun_layer_buffer);
@@ -283,7 +289,7 @@ void updateSteps(){
   HealthMetric metric = HealthMetricStepCount;
 
   time_t end = time(NULL);
-  time_t start = time_start_of_today();
+//  time_t start = time_start_of_today();
   time_t oneHour = end - SECONDS_PER_HOUR;
 
   static char date_buffer[26];
@@ -310,7 +316,7 @@ void updateSteps(){
     text_layer_set_background_color(s_steps_layer, GColorClear);      
     text_layer_set_text_color(s_steps_layer, settings.textColor);
 
-    snprintf( date_buffer, sizeof(date_buffer), "2day %d:%d", (int)health_service_sum_today(metric), 
+    snprintf( date_buffer, sizeof(date_buffer), "%d:%d", (int)health_service_sum_today(metric), 
                                                              (int)health_service_sum(metric, oneHour, end) );
     text_layer_set_text(s_steps_layer, date_buffer);
   } else {
@@ -577,8 +583,17 @@ static void prv_create_canvas() {
   text_layer_set_font(s_date_layer, s_date_font);
   layer_add_child(window_layer, text_layer_get_layer(s_date_layer));
 
+  // Create place TextLayer
+  s_place_layer = text_layer_create(GRect(0, 95, 144, 30));
+  text_layer_set_text_color(s_place_layer, settings.textColor);
+  text_layer_set_background_color(s_place_layer, GColorClear);
+  text_layer_set_text_alignment(s_place_layer, GTextAlignmentCenter);
+  text_layer_set_text(s_date_layer, "duration");
+  text_layer_set_font(s_date_layer, s_date_font);
+  layer_add_child(window_layer, text_layer_get_layer(s_place_layer));
+
   // Create duration TextLayer
-  s_duration_layer = text_layer_create(GRect(0, 115, 144, 30));
+  s_duration_layer = text_layer_create(GRect(0, 113, 144, 30));
   text_layer_set_text_color(s_duration_layer, settings.textColor);
   text_layer_set_background_color(s_duration_layer, GColorClear);
   text_layer_set_text_alignment(s_duration_layer, GTextAlignmentCenter);
@@ -591,7 +606,7 @@ static void prv_create_canvas() {
   s_steps_layer = text_layer_create(GRect(10, -5, 144-20, 30));
   text_layer_set_text_color(s_steps_layer, settings.textColor);
   text_layer_set_background_color(s_steps_layer, GColorClear);
-  text_layer_set_text_alignment(s_steps_layer, GTextAlignmentCenter);
+  text_layer_set_text_alignment(s_steps_layer, GTextAlignmentLeft);
   text_layer_set_text(s_steps_layer, "steps: --");
   text_layer_set_font(s_steps_layer, s_steps_font);
   layer_add_child(window_layer, text_layer_get_layer(s_steps_layer));
