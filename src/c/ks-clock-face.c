@@ -10,6 +10,7 @@
   20170319 aggiunto il riempimento bicolore dell'interno del quadrante per identificare 
     la durata della giornata
   20170325 aggiunto identificativo località
+  20170326 aggiunto timer per la chiamata al OpenWeather ogni 30 minuti
 */
 #include <pebble.h>
 
@@ -37,6 +38,8 @@ typedef struct ClaySettings {
   GColor hourhandColor;
   GColor minhandColor;
   GColor handColor24;
+  char APIKey[50];
+  bool weatherView;
 } ClaySettings;
 
 // An instance of the struct
@@ -56,15 +59,21 @@ static uint8_t s_radius = 0, s_anim_hours_60 = 0, s_color_channels[3];
 static uint8_t s_radius_final;
 static bool s_animating = false;
 
-static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer, *s_place_layer;
+static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer, *s_place_layer, *s_temp_layer;
 static GFont s_time_font, s_date_font, s_steps_font;
 static int s_battery_level;
 static GColor s_background_color;
 static char place_layer_buffer[32];
 static char duration_layer_buffer[32];
+static char temperature_layer_buffer[8];
+static char conditions_layer_buffer[32];
+
 // dirata per il disegno del quadrante
 static double durataGiorno;
 static double oraAlba, oraTramonto;
+
+static AppTimer *s_progress_timer;
+static unsigned int s_weather_timeout = 1 * 30000; // every half hour
 
 // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
 static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 500 };
@@ -92,15 +101,49 @@ static void update_time() {
     strftime(date_buffer, sizeof(date_buffer), "%a %d %b", tick_time);
     text_layer_set_text(s_date_layer, date_buffer);
     
-    text_layer_set_text(s_place_layer, place_layer_buffer);
-    text_layer_set_text(s_duration_layer, duration_layer_buffer);
-    
+    if( settings.weatherView){
+      text_layer_set_text(s_place_layer, place_layer_buffer);
+      text_layer_set_text(s_duration_layer, duration_layer_buffer);
+      text_layer_set_text(s_temp_layer, temperature_layer_buffer);
+    }else{
+      text_layer_set_text(s_place_layer, "");
+      text_layer_set_text(s_duration_layer, "");
+      text_layer_set_text(s_temp_layer, "");      
+    }
     text_layer_set_text_color(s_time_layer, settings.hourColor);
     text_layer_set_text_color(s_date_layer, settings.textColor);
     text_layer_set_text_color(s_steps_layer, settings.textColor);
     text_layer_set_text_color(s_place_layer, settings.hourColor);
     text_layer_set_text_color(s_duration_layer, settings.hourColor);
+    text_layer_set_text_color(s_temp_layer, settings.hourColor);
   }
+}
+static void weather_timer_callback(void *data) {
+  
+  if( s_weather_timeout < 2500 ){
+    s_weather_timeout = 30 * 60000;
+  }
+  s_progress_timer = app_timer_register(s_weather_timeout, weather_timer_callback, NULL);
+  
+  DictionaryIterator *out_iter;
+  
+  // Prepare the outbox buffer for this message
+  AppMessageResult result = app_message_outbox_begin(&out_iter);
+  
+  if(result == APP_MSG_OK) {
+    // Add an item to ask for weather data
+    int value = 0;
+    dict_write_cstring(out_iter, MESSAGE_KEY_API_key, settings.APIKey);
+    // Send this message
+    result = app_message_outbox_send();
+    if(result != APP_MSG_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR, "Error sending the outbox: %d", (int)result);
+    }
+  } else {
+    // The outbox cannot be used right now
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Error preparing the outbox: %d", (int)result);
+  }
+  APP_LOG(APP_LOG_LEVEL_INFO, "weather call" ); 
 }
 /************************************ configuration ***************************/
 static void prv_save_settings() {
@@ -160,6 +203,16 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if(handColor24_color_t) {
     settings.handColor24 = GColorFromHEX(handColor24_color_t->value->int32);
   }
+  Tuple *APIKey_t = dict_find(iter, MESSAGE_KEY_API_key);
+  if(APIKey_t) {
+    strcpy(settings.APIKey, APIKey_t->value->cstring);
+    // APP_LOG(APP_LOG_LEVEL_INFO, "APIKEY %s", settings.APIKey );
+  }
+  Tuple *weatherView_t = dict_find(iter, MESSAGE_KEY_weatherView);
+  if(weatherView_t) {
+    settings.weatherView = weatherView_t->value->int32 == 1;
+  }
+
   prv_save_settings();
   s_background_color = settings.backgroundColor;
   update_time();
@@ -169,12 +222,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   // Store incoming information
-  static char temperature_buffer[8];
-  static char conditions_buffer[32];
+
   static char sunrise_buffer[32];
   static char sunset_buffer[32];
   static char weather_layer_buffer[32];
-  static char sun_layer_buffer[32];
   static int ore, minuti;
   static float tmin;
   
@@ -190,8 +241,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   
     // If all data is available, use it
     if(temp_tuple && conditions_tuple) {
-      snprintf(temperature_buffer, sizeof(temperature_buffer), "%d°C", (int)temp_tuple->value->int32);
-      snprintf(conditions_buffer, sizeof(conditions_buffer), "%d", (int)conditions_tuple->value->cstring);
+      snprintf(temperature_layer_buffer, sizeof(temperature_layer_buffer), "%d°C", (int)temp_tuple->value->int32);
+      snprintf(conditions_layer_buffer, sizeof(conditions_layer_buffer), "%d", (int)conditions_tuple->value->cstring);
   
       // used to translate the result to TIME
       time_t temp = (uint)sunrise_tuple->value->uint32;
@@ -199,14 +250,14 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       strftime(sunrise_buffer, sizeof("00:00"), "%H:%M", tick_time);
       
       oraAlba = tick_time->tm_hour + tick_time->tm_min / 60.;
-      APP_LOG(APP_LOG_LEVEL_INFO, "oraAlba: %d %d:%d", (int)oraAlba, tick_time->tm_hour, tick_time->tm_min );      
+      // APP_LOG(APP_LOG_LEVEL_INFO, "oraAlba: %d %d:%d", (int)oraAlba, tick_time->tm_hour, tick_time->tm_min );      
       
       temp = (uint)sunset_tuple->value->uint32;
       tick_time = localtime( &temp );
       strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
 
       oraTramonto = tick_time->tm_hour + tick_time->tm_min / 60.;
-      APP_LOG(APP_LOG_LEVEL_INFO, "oraTramonto: %d %d:%d", (int)oraTramonto, tick_time->tm_hour, tick_time->tm_min );      
+      // APP_LOG(APP_LOG_LEVEL_INFO, "oraTramonto: %d %d:%d", (int)oraTramonto, tick_time->tm_hour, tick_time->tm_min );      
   
   //    snprintf(conditions_buffer, sizeof(conditions_buffer), "%s", conditions_tuple->value->cstring);
   
@@ -216,20 +267,20 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       // text_layer_set_text(s_weather_layer, weather_layer_buffer);
   
       temp = (uint)sunset_tuple->value->uint32 - (uint)sunrise_tuple->value->uint32;
-      ore = temp / 3600;
-      tmin = temp / 3600.;
-      minuti = (tmin - ore) * 60.;
       
       durataGiorno = temp/3600.;
       
-      APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %02d", (uint)temp, ore, minuti);
+      // ore = temp / 3600;
+      // tmin = temp / 3600.;
+      // minuti = (tmin - ore) * 60.;
+      // APP_LOG(APP_LOG_LEVEL_INFO, "seconds: %d h %d min %02d", (uint)temp, ore, minuti);
       
       tick_time = localtime( &temp );
   
       strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
   
       snprintf(place_layer_buffer, sizeof(place_layer_buffer), "%s", place_tuple->value->cstring);
-      snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s %s", conditions_tuple->value->cstring, temperature_buffer);
+      snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s", conditions_tuple->value->cstring);
       // snprintf(weather_layer_buffer, sizeof(weather_layer_buffer), "%s, %s", temperature_buffer, conditions_buffer);
       // text_layer_set_text(s_sun_layer, sun_layer_buffer);
     }
@@ -610,6 +661,15 @@ static void prv_create_canvas() {
   text_layer_set_text(s_steps_layer, "steps: --");
   text_layer_set_font(s_steps_layer, s_steps_font);
   layer_add_child(window_layer, text_layer_get_layer(s_steps_layer));
+
+  // Create temperature TextLayer
+  s_temp_layer = text_layer_create(GRect(0, 123, 144, 30));
+  text_layer_set_text_color(s_temp_layer, settings.textColor);
+  text_layer_set_background_color(s_temp_layer, GColorClear);
+  text_layer_set_text_alignment(s_temp_layer, GTextAlignmentCenter);
+  text_layer_set_text(s_temp_layer, "temp");
+  text_layer_set_font(s_temp_layer, s_date_font);
+  layer_add_child(window_layer, text_layer_get_layer(s_temp_layer));
   
 }
 
@@ -668,6 +728,10 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_layer);
   text_layer_destroy(s_time_layer);
   text_layer_destroy(s_date_layer);
+  text_layer_destroy(s_duration_layer);
+  text_layer_destroy(s_steps_layer);
+  text_layer_destroy(s_place_layer);
+  text_layer_destroy(s_temp_layer);  
 }
 
 // Initialize the default settings
@@ -701,9 +765,9 @@ static void prv_init() {
     .unload = prv_window_unload,
   });
   
-   // Open AppMessage connection
-  app_message_register_inbox_received(prv_inbox_received_handler);
-  app_message_open(128, 128);
+  // Open AppMessage connection
+  //app_message_register_inbox_received(prv_inbox_received_handler);
+  //app_message_open(128, 128);
 
   prv_load_settings();
   s_background_color = settings.backgroundColor;
@@ -716,8 +780,6 @@ static void prv_init() {
     .pebble_app_connection_handler = bluetooth_callback
   });
 
-
-
   // Register callbacks
   app_message_register_inbox_received(inbox_received_callback);
   app_message_register_inbox_dropped(inbox_dropped_callback);
@@ -725,8 +787,16 @@ static void prv_init() {
   app_message_register_outbox_sent(outbox_sent_callback);
 
   // Open AppMessage
-  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  app_message_open(256, 256);
   
+  // Add the update weather time
+  if (s_progress_timer) {
+    app_timer_cancel(s_progress_timer);
+  }
+  s_progress_timer = app_timer_register(1500, weather_timer_callback, NULL);
+  APP_LOG(APP_LOG_LEVEL_INFO, "scheduling: %d ", s_weather_timeout ); 
+  // chiama il servizio
+  // weather_timer_callback( NULL );
 }
 
 static void prv_deinit() {

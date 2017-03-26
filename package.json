@@ -32,7 +32,9 @@
             "type",
             "latitude",
             "handColor24",
-            "place"
+            "place",
+            "API_key",
+            "weatherView"
         ],
         "projectType": "native",
         "resources": {

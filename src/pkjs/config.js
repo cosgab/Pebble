@@ -85,6 +85,27 @@ module.exports = [
         "label": "Day time hand"
       }
     ]
+  },  
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Open Weather"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "weatherView",
+        "label": "Enable weather",
+        "defaultValue": true
+      },
+      {
+        "type": "input",
+        "messageKey": "API_key",
+        "defaultValue": "",
+        "label": "Open Weather APY Key"
+      }
+    ]
   },
   {
     "type": "submit",
