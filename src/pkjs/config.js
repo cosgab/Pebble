@@ -17,19 +17,19 @@ module.exports = [
       {
         "type": "color",
         "messageKey": "backgroundColor",
-        "defaultValue": "0x000000",
+        "defaultValue": "#0x5500AA",
         "label": "Background Bluetooth OK"
       },
       {
         "type": "color",
         "messageKey": "backgroundBTColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0xFF0000",
         "label": "Background Bluetooth KO"
       },
       {
         "type": "color",
         "messageKey": "quadrantColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0x55FFFF",
         "label": "Inner night"
       },
       {
@@ -50,39 +50,39 @@ module.exports = [
       {
         "type": "color",
         "messageKey": "textColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0xFFFF00",
         "label": "Date and steps counter"
       },
       {
         "type": "color",
         "messageKey": "batteryColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0xFF5555",
         "label": "Battery"
       },
       {
         "type": "color",
         "messageKey": "hourColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0x550055",
         "label": "Text time"
       },
 
       {
         "type": "color",
         "messageKey": "hourhandColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0x550055",
         "label": "Hours hand"
       },
       {
         "type": "color",
         "messageKey": "minhandColor",
-        "defaultValue": "0xFFFFFF",
+        "defaultValue": "0xAA5500",
         "label": "Minutes hand"
       },
       {
         "type": "color",
         "messageKey": "handColor24",
-        "defaultValue": "0xFFFFFF",
-        "label": "Day time hand"
+        "defaultValue": "0xAA00FF",
+        "label": "24 hours relative position"
       }
     ]
   },  
@@ -91,7 +91,13 @@ module.exports = [
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Open Weather"
+        "defaultValue": "Other stuff"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "fontBold",
+        "label": "Font bold?",
+        "defaultValue": true
       },
       {
         "type": "toggle",
@@ -103,7 +109,7 @@ module.exports = [
         "type": "input",
         "messageKey": "API_key",
         "defaultValue": "",
-        "label": "Open Weather APY Key"
+        "label": "Open Weather API Key"
       }
     ]
   },

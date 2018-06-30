@@ -11,6 +11,7 @@
     la durata della giornata
   20170325 aggiunto identificativo località
   20170326 aggiunto timer per la chiamata al OpenWeather ogni 30 minuti
+  20170330 aggiunto barra che mostra quanto manca al prossimo aggiornamento
 */
 #include <pebble.h>
 
@@ -40,6 +41,7 @@ typedef struct ClaySettings {
   GColor handColor24;
   char APIKey[50];
   bool weatherView;
+  bool fontBold;
 } ClaySettings;
 
 // An instance of the struct
@@ -60,13 +62,16 @@ static uint8_t s_radius_final;
 static bool s_animating = false;
 
 static TextLayer *s_time_layer, *s_date_layer, *s_steps_layer, *s_duration_layer, *s_place_layer, *s_temp_layer;
-static GFont s_time_font, s_date_font, s_steps_font;
+static TextLayer *s_sorge_layer, *s_tramonta_layer;
+static GFont s_time_font, s_date_font, s_steps_font, s_orari_font;
 static int s_battery_level;
 static GColor s_background_color;
 static char place_layer_buffer[32];
 static char duration_layer_buffer[32];
 static char temperature_layer_buffer[8];
 static char conditions_layer_buffer[32];
+static char sunrise_buffer[32];
+static char sunset_buffer[32];
 
 // dirata per il disegno del quadrante
 static double durataGiorno;
@@ -76,12 +81,16 @@ static AppTimer *s_progress_timer;
 static unsigned int s_weather_timeout = 1 * 30000; // every half hour
 
 // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
-static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 500 };
+static uint32_t const segments[] = { 200, 100, 200, 100, 200, 400, 50, 100, 50, 100, 50 };
 VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
+
+unsigned int timeToNextupdate; 
+
 /************************************ UI **************************************/
+
 static void update_time() {
   time_t temp = time(NULL); 
   struct tm *tick_time = localtime(&temp);
@@ -105,10 +114,14 @@ static void update_time() {
       text_layer_set_text(s_place_layer, place_layer_buffer);
       text_layer_set_text(s_duration_layer, duration_layer_buffer);
       text_layer_set_text(s_temp_layer, temperature_layer_buffer);
+      text_layer_set_text(s_sorge_layer, sunrise_buffer);
+      text_layer_set_text(s_tramonta_layer, sunset_buffer);
     }else{
       text_layer_set_text(s_place_layer, "");
       text_layer_set_text(s_duration_layer, "");
       text_layer_set_text(s_temp_layer, "");      
+      text_layer_set_text(s_sorge_layer, "");
+      text_layer_set_text(s_tramonta_layer, "");
     }
     text_layer_set_text_color(s_time_layer, settings.hourColor);
     text_layer_set_text_color(s_date_layer, settings.textColor);
@@ -121,9 +134,12 @@ static void update_time() {
 static void weather_timer_callback(void *data) {
   
   if( s_weather_timeout < 2500 ){
-    s_weather_timeout = 30 * 60000;
+    s_weather_timeout = 30 * 60;
   }
-  s_progress_timer = app_timer_register(s_weather_timeout, weather_timer_callback, NULL);
+  s_progress_timer = app_timer_register(s_weather_timeout*1000, weather_timer_callback, NULL);
+  
+  // calcola l'ora del prossimo aggiornamento
+  timeToNextupdate = time(NULL) + s_weather_timeout;
   
   DictionaryIterator *out_iter;
   
@@ -132,7 +148,7 @@ static void weather_timer_callback(void *data) {
   
   if(result == APP_MSG_OK) {
     // Add an item to ask for weather data
-    int value = 0;
+
     dict_write_cstring(out_iter, MESSAGE_KEY_API_key, settings.APIKey);
     // Send this message
     result = app_message_outbox_send();
@@ -143,7 +159,7 @@ static void weather_timer_callback(void *data) {
     // The outbox cannot be used right now
     APP_LOG(APP_LOG_LEVEL_ERROR, "Error preparing the outbox: %d", (int)result);
   }
-  APP_LOG(APP_LOG_LEVEL_INFO, "weather call" ); 
+  APP_LOG(APP_LOG_LEVEL_INFO, "weather call next at %u", timeToNextupdate ); 
 }
 /************************************ configuration ***************************/
 static void prv_save_settings() {
@@ -212,7 +228,19 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if(weatherView_t) {
     settings.weatherView = weatherView_t->value->int32 == 1;
   }
-
+  Tuple *fontBold_t = dict_find(iter, MESSAGE_KEY_fontBold);
+  if(fontBold_t) {
+    settings.fontBold = fontBold_t->value->int32 == 1;
+  }
+  
+  if( settings.fontBold){
+    s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  }else{
+    s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
+  }
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
   prv_save_settings();
   s_background_color = settings.backgroundColor;
   update_time();
@@ -223,8 +251,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   // Store incoming information
 
-  static char sunrise_buffer[32];
-  static char sunset_buffer[32];
   static char weather_layer_buffer[32];
   static int ore, minuti;
   static float tmin;
@@ -277,7 +303,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       
       tick_time = localtime( &temp );
   
-      strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
+      // strftime(sunset_buffer, sizeof("00:00"), "%H:%M", tick_time);
   
       snprintf(place_layer_buffer, sizeof(place_layer_buffer), "%s", place_tuple->value->cstring);
       snprintf(duration_layer_buffer, sizeof(duration_layer_buffer), "%s", conditions_tuple->value->cstring);
@@ -440,10 +466,6 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits changed) {
   s_last_time.hours -= (s_last_time.hours > 12) ? 12 : 0;
   s_last_time.minutes = tick_time->tm_min;
 
-  for (int i = 0; i < 3; i++) {
-    s_color_channels[i] = rand() % 256;
-  }
-
   // Redraw
   if (s_canvas_layer) {
     update_time();
@@ -456,10 +478,28 @@ static int prv_hours_to_minutes(int hours_out_of_12) {
 }
 
 static void prv_update_proc(Layer *layer, GContext *ctx) {
-  GRect full_bounds = layer_get_bounds(layer);
-  GRect bounds = layer_get_unobstructed_bounds(layer);
+  Layer *window_layer = window_get_root_layer(s_main_window);
+  
+  GRect full_bounds = layer_get_bounds(window_layer);
+  GRect bounds = layer_get_unobstructed_bounds(window_layer);
   s_center = grect_center_point(&bounds);
 
+  int s_calcolo, s_correzione;
+  if( bounds.size.h ==  full_bounds.size.h ){
+    s_radius = (bounds.size.h - 40) / 2;
+    s_calcolo = (bounds.size.h - 52) / 2;
+    layer_set_hidden(text_layer_get_layer(s_place_layer), false);
+    s_correzione = -1;
+  }else{
+    s_radius = (bounds.size.h - 40) / 2;
+    s_calcolo = (bounds.size.h - 30) / 2;
+    layer_set_hidden(text_layer_get_layer(s_place_layer), true);
+    s_correzione = 0;
+  }
+
+  // APP_LOG(APP_LOG_LEVEL_INFO, 
+  //            "radius %d bounds wide %d unob wide %d", s_radius, bounds.size.h, full_bounds.size.h);  
+  
   // Color background?
   if (COLORS) {
     graphics_context_set_fill_color(ctx, s_background_color );
@@ -474,18 +514,18 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
     riempie il quadrante con i due segmenti relativi alla durata del giorno
   */
   if (!s_animating) {
-    graphics_context_set_stroke_color(ctx, settings.quadrantColor);
-    graphics_context_set_stroke_width(ctx, 4);
-    
+   
   // Battery clockface  
     graphics_context_set_stroke_color(ctx, settings.batteryColor);
     graphics_context_set_stroke_width(ctx, 5);  
   //  graphics_draw_circle(ctx, s_center, s_radius / 100. * s_battery_level);
   
   //  GRect battRect = GRect(144/2 - s_radius -5, 168/2 - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
-    GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
+    GRect battRect = GRect( s_center.x - s_calcolo -6, s_center.y - s_calcolo -4  + s_correzione, s_calcolo * 2+11, s_calcolo * 2 +11 + s_correzione);
+//    GRect battRect = GRect( s_center.x - s_radius -5, s_center.y - s_radius -5, s_radius * 2+11, s_radius * 2 +11);
     graphics_draw_arc( ctx, battRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360 / 100. * s_battery_level));
-      // Minutes are expanding circle arc
+    
+    // Riempimento area notte/giorno
     GRect frame = grect_inset(bounds, GEdgeInsets(4 * INSET));
     graphics_context_set_fill_color(ctx, settings.innerFillColor);
     graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, 55, DEG_TO_TRIGANGLE((oraAlba - 12) * 15.), DEG_TO_TRIGANGLE((oraTramonto - 12) * 15.) );
@@ -548,20 +588,19 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
 //              "Angolo %d %d", angoloOra, time_now->tm_hour);  
   // hour_angle += (minute_angle / TRIG_MAX_ANGLE) * (TRIG_MAX_ANGLE / 24);
   hour_hand = (GPoint) {
-    .x = (int16_t)(sin_lookup(angoloOra) * (int32_t)(s_radius - (1.5 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.x,
-    .y = (int16_t)(-cos_lookup(angoloOra) * (int32_t)(s_radius - (1.5 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.y,
+    .x = (int16_t)(sin_lookup(angoloOra) * (int32_t)(s_radius - (0.3 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.x,
+    .y = (int16_t)(-cos_lookup(angoloOra) * (int32_t)(s_radius - (0.3 * HAND_MARGIN)) / TRIG_MAX_RATIO) + s_center.y,
   };
   
   if( hour_angle > TRIG_MAX_ANGLE / 4 && hour_angle < TRIG_MAX_ANGLE / 0.75){
-    graphics_context_set_stroke_color(ctx, settings.handColor24); 
+    graphics_context_set_fill_color(ctx, settings.handColor24); 
   }else{
-    graphics_context_set_stroke_color(ctx, settings.handColor24);
+    graphics_context_set_fill_color(ctx, settings.handColor24);
   }
-  
-  graphics_context_set_stroke_width(ctx, 2);
-  graphics_draw_line(ctx, s_center, hour_hand);
-  
-  
+
+//  graphics_context_set_stroke_width(ctx, 1);
+//  graphics_draw_line(ctx, s_center, hour_hand);
+  graphics_fill_circle(ctx, hour_hand, 5);
 
   graphics_context_set_stroke_color(ctx, settings.quadrantColor);
   graphics_context_set_stroke_width(ctx, 7);  
@@ -570,6 +609,20 @@ static void prv_update_proc(Layer *layer, GContext *ctx) {
 //  graphics_draw_arc( ctx, quadrantRect, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(90), DEG_TO_TRIGANGLE(90+360 / 24. * durataGiorno));
 //  graphics_fill_radial( ctx, quadrantRect, GOvalScaleModeFitCircle, 25, DEG_TO_TRIGANGLE(90), TIME_ANGLE(durataGiorno) );
   
+  /*
+    draw the bar for the weather update
+  */
+  int width = (int)(float)(((float)( s_weather_timeout - (timeToNextupdate - t)) / (float)s_weather_timeout) * (float)PBL_DISPLAY_WIDTH);
+//      APP_LOG(APP_LOG_LEVEL_INFO, 
+//              "time %u next %u s_wea %u width %d", t, timeToNextupdate, s_weather_timeout, width);  
+  
+    // Draw the background
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, PBL_DISPLAY_HEIGHT-2, PBL_DISPLAY_WIDTH, 2), GCornerNone, 0);
+  
+  // Draw the bar
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, GRect(0, PBL_DISPLAY_HEIGHT-2, width, 2), GCornerNone, 0);
 
 }
 
@@ -614,7 +667,11 @@ static void prv_create_canvas() {
   layer_add_child(window_layer, s_canvas_layer);
 
   /* test dell'ora */
-  s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  if( settings.fontBold){
+    s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  }else{
+    s_time_font = fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
+  }
   // Create time TextLayer
   s_time_layer = text_layer_create(GRect(0, 32, 144, 50));
   text_layer_set_background_color(s_time_layer, GColorClear);
@@ -624,7 +681,11 @@ static void prv_create_canvas() {
   text_layer_set_text_alignment(s_time_layer, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
 
-  s_date_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);  
+  if( settings.fontBold){
+    s_date_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);  
+  }else{
+    s_date_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);  
+  }
   // Create date TextLayer
   s_date_layer = text_layer_create(GRect(0, 144, 144, 30));
   text_layer_set_text_color(s_date_layer, settings.textColor);
@@ -639,22 +700,22 @@ static void prv_create_canvas() {
   text_layer_set_text_color(s_place_layer, settings.textColor);
   text_layer_set_background_color(s_place_layer, GColorClear);
   text_layer_set_text_alignment(s_place_layer, GTextAlignmentCenter);
-  text_layer_set_text(s_date_layer, "duration");
-  text_layer_set_font(s_date_layer, s_date_font);
+  text_layer_set_text(s_place_layer, "duration");
+  text_layer_set_font(s_place_layer, s_date_font);
   layer_add_child(window_layer, text_layer_get_layer(s_place_layer));
 
   // Create duration TextLayer
-  s_duration_layer = text_layer_create(GRect(0, 113, 144, 30));
+  s_duration_layer = text_layer_create(GRect(0, 109, 144, 30));
   text_layer_set_text_color(s_duration_layer, settings.textColor);
   text_layer_set_background_color(s_duration_layer, GColorClear);
   text_layer_set_text_alignment(s_duration_layer, GTextAlignmentCenter);
-  text_layer_set_text(s_date_layer, "duration");
-  text_layer_set_font(s_date_layer, s_date_font);
+  text_layer_set_text(s_duration_layer, "duration");
+  text_layer_set_font(s_duration_layer, s_date_font);
   layer_add_child(window_layer, text_layer_get_layer(s_duration_layer));
 
   s_steps_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   // Create steps TextLayer
-  s_steps_layer = text_layer_create(GRect(10, -5, 144-20, 30));
+  s_steps_layer = text_layer_create(GRect(10, -6, 144-20, 30));
   text_layer_set_text_color(s_steps_layer, settings.textColor);
   text_layer_set_background_color(s_steps_layer, GColorClear);
   text_layer_set_text_alignment(s_steps_layer, GTextAlignmentLeft);
@@ -670,6 +731,26 @@ static void prv_create_canvas() {
   text_layer_set_text(s_temp_layer, "temp");
   text_layer_set_font(s_temp_layer, s_date_font);
   layer_add_child(window_layer, text_layer_get_layer(s_temp_layer));
+
+  s_orari_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+
+  // Create sorge TextLayer
+  s_sorge_layer = text_layer_create(GRect(110, -5, 44, 20));
+  text_layer_set_text_color(s_sorge_layer, settings.textColor);
+  text_layer_set_background_color(s_sorge_layer, GColorClear);
+  text_layer_set_text_alignment(s_sorge_layer, GTextAlignmentLeft);
+  text_layer_set_text(s_sorge_layer, "temp");
+  text_layer_set_font(s_sorge_layer, s_orari_font);
+  layer_add_child(window_layer, text_layer_get_layer(s_sorge_layer));
+  
+  // Create tramonta TextLayer
+  s_tramonta_layer = text_layer_create(GRect(110, 7, 44, 20));
+  text_layer_set_text_color(s_tramonta_layer, settings.textColor);
+  text_layer_set_background_color(s_tramonta_layer, GColorClear);
+  text_layer_set_text_alignment(s_tramonta_layer, GTextAlignmentLeft);
+  text_layer_set_text(s_tramonta_layer, "temp");
+  text_layer_set_font(s_tramonta_layer, s_orari_font);
+  layer_add_child(window_layer, text_layer_get_layer(s_tramonta_layer));
   
 }
 
@@ -793,6 +874,7 @@ static void prv_init() {
   if (s_progress_timer) {
     app_timer_cancel(s_progress_timer);
   }
+  s_weather_timeout = 1000;
   s_progress_timer = app_timer_register(1500, weather_timer_callback, NULL);
   APP_LOG(APP_LOG_LEVEL_INFO, "scheduling: %d ", s_weather_timeout ); 
   // chiama il servizio
